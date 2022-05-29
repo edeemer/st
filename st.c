@@ -30,7 +30,7 @@
 
 /* Arbitrary sizes */
 #define UTF_INVALID   0xFFFD
-#define UTF_SIZ       4
+#define UTF_SIZ       3
 #define ESC_BUF_SIZ   (128*UTF_SIZ)
 #define ESC_ARG_SIZ   16
 #define STR_BUF_SIZ   ESC_BUF_SIZ
@@ -227,10 +227,10 @@ static int iofd = 1;
 static int cmdfd;
 static pid_t pid;
 
-static const uchar utfbyte[UTF_SIZ + 1] = {0x80,    0, 0xC0, 0xE0, 0xF0};
-static const uchar utfmask[UTF_SIZ + 1] = {0xC0, 0x80, 0xE0, 0xF0, 0xF8};
-static const Rune utfmin[UTF_SIZ + 1] = {       0,    0,  0x80,  0x800,  0x10000};
-static const Rune utfmax[UTF_SIZ + 1] = {0x10FFFF, 0x7F, 0x7FF, 0xFFFF, 0x10FFFF};
+static const uchar utfbyte[UTF_SIZ + 1] = {0x80,    0, 0xC0, 0xE0};
+static const uchar utfmask[UTF_SIZ + 1] = {0xC0, 0x80, 0xE0, 0xF0};
+static const Rune utfmin[UTF_SIZ + 1] = {     0,    0, 0x80, 0x800};
+static const Rune utfmax[UTF_SIZ + 1] = {0xFFFF, 0x7F, 0x7FF, 0xFFFF};
 
 ssize_t
 xwrite(int fd, const char *s, size_t len)
@@ -545,8 +545,8 @@ selsnap(int *x, int *y, int direction)
 
 			gp = &term.line[newy][newx];
 			delim = ISDELIM(gp->u);
-			if (!(gp->mode & ATTR_WDUMMY) && (delim != prevdelim
-					|| (delim && gp->u != prevgp->u)))
+			if (delim != prevdelim
+					|| (delim && gp->u != prevgp->u))
 				break;
 
 			*x = newx;
@@ -612,12 +612,8 @@ getsel(void)
 		while (last >= gp && last->u == ' ')
 			--last;
 
-		for ( ; gp <= last; ++gp) {
-			if (gp->mode & ATTR_WDUMMY)
-				continue;
-
+		for ( ; gp <= last; ++gp)
 			ptr += utf8encode(gp->u, ptr);
-		}
 
 		/*
 		 * Copy and pasting of line endings is inconsistent
@@ -1202,16 +1198,6 @@ tsetchar(Rune u, const Glyph *attr, int x, int y)
 	   BETWEEN(u, 0x41, 0x7e) && vt100_0[u - 0x41])
 		utf8decode(vt100_0[u - 0x41], &u, UTF_SIZ);
 
-	if (term.line[y][x].mode & ATTR_WIDE) {
-		if (x+1 < term.col) {
-			term.line[y][x+1].u = ' ';
-			term.line[y][x+1].mode &= ~ATTR_WDUMMY;
-		}
-	} else if (term.line[y][x].mode & ATTR_WDUMMY) {
-		term.line[y][x-1].u = ' ';
-		term.line[y][x-1].mode &= ~ATTR_WIDE;
-	}
-
 	term.dirty[y] = 1;
 	term.line[y][x] = *attr;
 	term.line[y][x].u = u;
@@ -1302,23 +1288,6 @@ tdefcolor(const int *attr, int *npar, int l)
 	uint r, g, b;
 
 	switch (attr[*npar + 1]) {
-	case 2: /* direct color in RGB space */
-		if (*npar + 4 >= l) {
-			fprintf(stderr,
-				"erresc(38): Incorrect number of parameters (%d)\n",
-				*npar);
-			break;
-		}
-		r = attr[*npar + 2];
-		g = attr[*npar + 3];
-		b = attr[*npar + 4];
-		*npar += 4;
-		if (!BETWEEN(r, 0, 255) || !BETWEEN(g, 0, 255) || !BETWEEN(b, 0, 255))
-			fprintf(stderr, "erresc: bad rgb color (%u,%u,%u)\n",
-				r, g, b);
-		else
-			idx = TRUECOLOR(r, g, b);
-		break;
 	case 5: /* indexed color */
 		if (*npar + 2 >= l) {
 			fprintf(stderr,
@@ -1334,6 +1303,7 @@ tdefcolor(const int *attr, int *npar, int l)
 		break;
 	case 0: /* implemented defined (only foreground) */
 	case 1: /* transparent */
+	case 2: /* direct color in RGB space */
 	case 3: /* direct color in CMY space */
 	case 4: /* direct color in CMYK space */
 	default:
@@ -2351,17 +2321,15 @@ tputc(Rune u)
 {
 	char c[UTF_SIZ];
 	int control;
-	int width, len;
+	int len;
 	Glyph *gp;
 
 	control = ISCONTROL(u);
 	if (u < 127 || !IS_SET(MODE_UTF8)) {
 		c[0] = u;
-		width = len = 1;
+		len = 1;
 	} else {
 		len = utf8encode(u, c);
-		if (!control && (width = wcwidth(u)) == -1)
-			width = 1;
 	}
 
 	if (IS_SET(MODE_PRINT))
@@ -2459,30 +2427,14 @@ check_control_code:
 		gp = &term.line[term.c.y][term.c.x];
 	}
 
-	if (IS_SET(MODE_INSERT) && term.c.x+width < term.col)
-		memmove(gp+width, gp, (term.col - term.c.x - width) * sizeof(Glyph));
-
-	if (term.c.x+width > term.col) {
-		tnewline(1);
-		gp = &term.line[term.c.y][term.c.x];
-	}
+	if (IS_SET(MODE_INSERT) && term.c.x+1 < term.col)
+		memmove(gp+1, gp, (term.col - term.c.x - 1) * sizeof(Glyph));
 
 	tsetchar(u, &term.c.attr, term.c.x, term.c.y);
 	term.lastc = u;
 
-	if (width == 2) {
-		gp->mode |= ATTR_WIDE;
-		if (term.c.x+1 < term.col) {
-			if (gp[1].mode == ATTR_WIDE && term.c.x+2 < term.col) {
-				gp[2].u = ' ';
-				gp[2].mode &= ~ATTR_WDUMMY;
-			}
-			gp[1].u = '\0';
-			gp[1].mode = ATTR_WDUMMY;
-		}
-	}
-	if (term.c.x+width < term.col) {
-		tmoveto(term.c.x+width, term.c.y);
+	if (term.c.x+1 < term.col) {
+		tmoveto(term.c.x+1, term.c.y);
 	} else {
 		term.c.state |= CURSOR_WRAPNEXT;
 	}
@@ -2633,10 +2585,6 @@ draw(void)
 	/* adjust cursor position */
 	LIMIT(term.ocx, 0, term.col-1);
 	LIMIT(term.ocy, 0, term.row-1);
-	if (term.line[term.ocy][term.ocx].mode & ATTR_WDUMMY)
-		term.ocx--;
-	if (term.line[term.c.y][cx].mode & ATTR_WDUMMY)
-		cx--;
 
 	drawregion(0, 0, term.col, term.row);
 	xdrawcursor(cx, term.c.y, term.line[term.c.y][cx],

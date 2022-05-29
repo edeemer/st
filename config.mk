@@ -1,5 +1,5 @@
 # st version
-VERSION = 0.8.5
+VERSION = 0.8.5m
 
 # Customize below to fit your system
 
@@ -13,12 +13,8 @@ X11LIB = /usr/X11R6/lib
 PKG_CONFIG = pkg-config
 
 # includes and libs
-INCS = -I$(X11INC) \
-       `$(PKG_CONFIG) --cflags fontconfig` \
-       `$(PKG_CONFIG) --cflags freetype2`
-LIBS = -L$(X11LIB) -lm -lrt -lX11 -lutil -lXft \
-       `$(PKG_CONFIG) --libs fontconfig` \
-       `$(PKG_CONFIG) --libs freetype2`
+INCS = -I$(X11INC)
+LIBS = -L$(X11LIB) -lm -lrt -lX11 -lutil
 
 # flags
 STCPPFLAGS = -DVERSION=\"$(VERSION)\" -D_XOPEN_SOURCE=600
@@ -27,9 +23,7 @@ STLDFLAGS = $(LIBS) $(LDFLAGS)
 
 # OpenBSD:
 #CPPFLAGS = -DVERSION=\"$(VERSION)\" -D_XOPEN_SOURCE=600 -D_BSD_SOURCE
-#LIBS = -L$(X11LIB) -lm -lX11 -lutil -lXft \
-#       `$(PKG_CONFIG) --libs fontconfig` \
-#       `$(PKG_CONFIG) --libs freetype2`
+#LIBS = -L$(X11LIB) -lm -lX11 -lutil
 #MANPREFIX = ${PREFIX}/man
 
 # compiler and linker
